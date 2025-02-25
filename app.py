@@ -77,7 +77,8 @@ class RobinHoodGame:
     def move_token(self, winner: int, next_vertex: str):
         """Move the token to the next vertex chosen by the winner"""
         if next_vertex not in self.graph.neighbors(self.current_vertex):
-            raise ValueError(f"Invalid move. {next_vertex} is not a neighbor of {self.current_vertex}")
+            # Safety check - if not a valid neighbor, don't move
+            return
         
         self.current_vertex = next_vertex
         
@@ -107,15 +108,20 @@ class RobinHoodGame:
 def create_default_graph():
     """Create the default graph from the paper's example"""
     G = nx.DiGraph()
+    # Add nodes first
     G.add_node("vleft")
     G.add_node("vright")
     G.add_node("v1")
     G.add_node("v2")
     
-    G.add_edge("vleft", "vright")
-    G.add_edge("vright", "vleft")
-    G.add_edge("vright", "v1")
-    G.add_edge("vleft", "v2")
+    # Then add edges
+    try:
+        G.add_edge("vleft", "vright")
+        G.add_edge("vright", "vleft")
+        G.add_edge("vright", "v1")
+        G.add_edge("vleft", "v2")
+    except Exception as e:
+        st.error(f"Error creating graph: {e}")
     
     return G
 
@@ -173,6 +179,10 @@ def display_threshold_graph():
 
 def display_game_history(game):
     """Display the history of the game as a dataframe"""
+    if not game.history:
+        st.info("No game history to display yet.")
+        return
+        
     df = pd.DataFrame(game.history)
     
     # Format the budgets to show as percentages
@@ -196,17 +206,52 @@ def run_game_simulation(graph, lambda_param, targets, initial_vertex, initial_bu
     round_num = 0
     while not game.game_over and round_num < max_rounds:
         # Get player 1's move
-        p1_bid, p1_next = player1_strategy(game)
-        
+        try:
+            p1_bid, p1_next = player1_strategy(game)
+        except Exception as e:
+            # Fallback strategy in case of error
+            neighbors = list(game.graph.neighbors(game.current_vertex))
+            if not neighbors:
+                # No valid moves - end game
+                game.game_over = True
+                game.winner = 2  # Player 2 wins
+                break
+            p1_bid = min(0.1, game.player1_budget)
+            p1_next = neighbors[0]
+            
         # Get player 2's move
-        p2_bid, p2_next = player2_strategy(game)
+        try:
+            p2_bid, p2_next = player2_strategy(game)
+        except Exception as e:
+            # Fallback strategy in case of error
+            neighbors = list(game.graph.neighbors(game.current_vertex))
+            if not neighbors:
+                # No valid moves - end game
+                game.game_over = True
+                game.winner = 1  # Player 1 wins
+                break
+            p2_bid = min(0.1, game.player2_budget)
+            p2_next = neighbors[0]
         
         # Perform wealth redistribution and bidding
         game.wealth_redistribution()
         winner = game.perform_bidding(p1_bid, p2_bid)
         
-        # Move the token according to winner's choice
+        # Make sure move is valid
+        neighbors = list(game.graph.neighbors(game.current_vertex))
         next_vertex = p1_next if winner == 1 else p2_next
+        
+        # Verify next_vertex is a valid neighbor
+        if next_vertex not in neighbors:
+            # Pick first valid neighbor instead
+            if neighbors:
+                next_vertex = neighbors[0]
+            else:
+                # No valid moves - end game
+                game.game_over = True
+                game.winner = 2 if winner == 1 else 1  # Other player wins
+                break
+        
         game.move_token(winner, next_vertex)
         
         round_num += 1
@@ -226,6 +271,10 @@ def optimal_player1_strategy(game):
     current_vertex = game.current_vertex
     neighbors = list(game.graph.neighbors(current_vertex))
     
+    # Handle case with no neighbors
+    if not neighbors:
+        return 0, current_vertex
+    
     # If we can reach a target, go there
     for neighbor in neighbors:
         if neighbor in game.targets:
@@ -237,10 +286,12 @@ def optimal_player1_strategy(game):
     if current_vertex == "vleft":
         # Bid enough to ensure winning to vright
         threshold_diff = 0.1
-        return threshold_diff, "vright"
+        if "vright" in neighbors:
+            return threshold_diff, "vright"
     elif current_vertex == "vright":
         # Try to reach v1
-        return game.player1_budget, "v1"
+        if "v1" in neighbors:
+            return game.player1_budget, "v1"
     
     # Fallback - just bid half budget and pick first neighbor
     return game.player1_budget / 2, neighbors[0]
@@ -282,74 +333,78 @@ def human_player_strategy(game, bid, next_vertex):
 def main():
     st.title("🏹 Robin Hood Reachability Bidding Games")
     st.markdown("""
-    This simulator demonstrates the Robin Hood bidding mechanism introduced in the paper 
-    "Robin Hood Reachability Bidding Games" by Shaull Almagor, Guy Avni, and Neta Dafni.
-    
-    In this model, at the beginning of each round, the richer player pays the poorer player a fraction λ 
-    of the difference between their budgets, simulating wealth regulation.
+    This simulator demonstrates the Robin Hood bidding mechanism from the paper 
+    "Robin Hood Reachability Bidding Games" by Almagor, Avni, and Dafni.
     """)
     
-    # How to play guide
-    with st.expander("📘 How to Play Guide", expanded=True):
-        st.markdown("""
-        ### Game Concept
-        In Robin Hood Bidding Games, two players compete to move a token on a graph. 
-        - **Player 1's goal** is to reach a target vertex (marked in green)
-        - **Player 2's goal** is to prevent this by either reaching a safe vertex or keeping the game going indefinitely
-        
-        ### Game Mechanics
-        Each round consists of three phases:
-        1. **Wealth Redistribution (Robin Hood mechanism)**: The richer player pays the poorer player a portion (λ) of their wealth difference
-        2. **Bidding**: Both players place bids within their budgets, and the highest bidder wins (ties go to Player 1)
-        3. **Moving**: The winner moves the token to an adjacent vertex of their choice
-        
-        ### Available Game Modes
-        
-        #### 1. Demo from Paper
-        - Demonstrates the example from the original research paper
-        - Set lambda (λ) and initial budget values
-        - Run simulations to see the outcome
-        
-        #### 2. Interactive Play
-        - Play as Player 1 against an AI opponent
-        - Make bids and choose moves
-        - See the game unfold step by step
-        
-        #### 3. Theoretical Analysis
-        - Explore the mathematical properties behind the game
-        - View the threshold function showing how game outcomes change with λ
-        
-        #### 4. Custom Graph Creation
-        - Build your own game graph
-        - Add/remove vertices and edges
-        - Set target nodes and run simulations
-        
-        ### Key Concepts
-        - **Threshold**: For each vertex, there exists a threshold budget value such that:
-          - Player 1 wins if their budget is above the threshold
-          - Player 2 wins if their budget is below the threshold
-          - At exactly the threshold, the game may be undetermined
-        - **Lambda (λ)**: Controls how much wealth redistribution occurs (0 = no redistribution, 0.5 = maximum)
-        """)
+    # Game guide button
+    if st.button("📘 Show Game Guide"):
+        st.session_state.show_guide = True
     
-    # Quick start guide for new users
-    with st.expander("🚀 Quick Start", expanded=False):
-        st.markdown("""
-        ### For First-Time Users
-        1. Select a game mode from the sidebar on the left
-        2. **Demo from Paper**: Just click "Run Simulation" to see the game in action
-        3. **Interactive Play**: Make bids and select moves when prompted
-        4. **Custom Graph**: Create your own graph before running a simulation
-        
-        ### Tips for Optimal Play
-        - **For Player 1**: 
-          - If your budget is above the threshold, try to maintain it while moving toward target
-          - Bid conservatively when possible to preserve budget
-        - **For Player 2**:
-          - Try to move away from target vertices
-          - Force Player 1 to spend budget on crucial moves
-        """)
+    # Game guide content in session state
+    if 'show_guide' not in st.session_state:
+        st.session_state.show_guide = False
     
+    if st.session_state.show_guide:
+        with st.expander("📘 Game Guide", expanded=True):
+            st.markdown("""
+            ### Game Concept
+            In Robin Hood Bidding Games, two players compete to move a token on a graph. 
+            - **Player 1's goal** is to reach a target vertex (marked in green)
+            - **Player 2's goal** is to prevent this by either reaching a safe vertex or keeping the game going indefinitely
+            
+            ### Game Mechanics
+            Each round consists of three phases:
+            1. **Wealth Redistribution (Robin Hood mechanism)**: The richer player pays the poorer player a portion (λ) of their wealth difference
+            2. **Bidding**: Both players place bids within their budgets, and the highest bidder wins (ties go to Player 1)
+            3. **Moving**: The winner moves the token to an adjacent vertex of their choice
+            
+            ### Available Game Modes
+            
+            #### 1. Demo from Paper
+            - Demonstrates the example from the original research paper
+            - Set lambda (λ) and initial budget values
+            - Run simulations to see the outcome
+            
+            #### 2. Interactive Play
+            - Play as Player 1 against an AI opponent
+            - Make bids and choose moves
+            - See the game unfold step by step
+            
+            #### 3. Theoretical Analysis
+            - Explore the mathematical properties behind the game
+            - View the threshold function showing how game outcomes change with λ
+            
+            #### 4. Custom Graph Creation
+            - Build your own game graph
+            - Add/remove vertices and edges
+            - Set target nodes and run simulations
+            
+            ### Key Concepts
+            - **Threshold**: For each vertex, there exists a threshold budget value such that:
+              - Player 1 wins if their budget is above the threshold
+              - Player 2 wins if their budget is below the threshold
+              - At exactly the threshold, the game may be undetermined
+            - **Lambda (λ)**: Controls how much wealth redistribution occurs (0 = no redistribution, 0.5 = maximum)
+            
+            ### For First-Time Users
+            1. Select a game mode from the sidebar on the left
+            2. **Demo from Paper**: Just click "Run Simulation" to see the game in action
+            3. **Interactive Play**: Make bids and select moves when prompted
+            4. **Custom Graph**: Create your own graph before running a simulation
+            
+            ### Tips for Optimal Play
+            - **For Player 1**: 
+              - If your budget is above the threshold, try to maintain it while moving toward target
+              - Bid conservatively when possible to preserve budget
+            - **For Player 2**:
+              - Try to move away from target vertices
+              - Force Player 1 to spend budget on crucial moves
+            """)
+        
+        if st.button("Hide Game Guide"):
+            st.session_state.show_guide = False
+            st.rerun()
     
     # Sidebar for configuration
     st.sidebar.header("Game Configuration")

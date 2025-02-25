@@ -198,9 +198,8 @@ with tab1:
                 # Calculate opponent's optimal bid (simplified)
                 threshold_diff = 0.1  # Simplified value for demo
                 opponent_bid = min(threshold_diff, 
-                                  st.session_state.current_player == 1 
-                                  ? (1 - redistributed_budget_p1) 
-                                  : redistributed_budget_p1)
+                                  (1 - redistributed_budget_p1) if st.session_state.current_player == 1 
+                                  else redistributed_budget_p1)
                 
                 # Determine bid winner
                 player1_bid = bid_amount if st.session_state.current_player == 1 else opponent_bid

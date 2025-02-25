@@ -267,7 +267,11 @@ def optimal_player2_strategy(game):
         if neighbor not in game.targets:
             return game.player2_budget / 2, neighbor
     
-    # If all neighbors are targets, just pick the first one
+    # If all neighbors are targets or if there are no neighbors, make a safe move
+    if not neighbors:
+        # No valid neighbors, this shouldn't happen in normal gameplay
+        # Return a safe default that won't be used (since we can't move anywhere)
+        return 0, game.current_vertex
     return game.player2_budget / 2, neighbors[0]
 
 # Human input strategy (will be called during interactive play)
@@ -284,6 +288,68 @@ def main():
     In this model, at the beginning of each round, the richer player pays the poorer player a fraction λ 
     of the difference between their budgets, simulating wealth regulation.
     """)
+    
+    # How to play guide
+    with st.expander("📘 How to Play Guide", expanded=True):
+        st.markdown("""
+        ### Game Concept
+        In Robin Hood Bidding Games, two players compete to move a token on a graph. 
+        - **Player 1's goal** is to reach a target vertex (marked in green)
+        - **Player 2's goal** is to prevent this by either reaching a safe vertex or keeping the game going indefinitely
+        
+        ### Game Mechanics
+        Each round consists of three phases:
+        1. **Wealth Redistribution (Robin Hood mechanism)**: The richer player pays the poorer player a portion (λ) of their wealth difference
+        2. **Bidding**: Both players place bids within their budgets, and the highest bidder wins (ties go to Player 1)
+        3. **Moving**: The winner moves the token to an adjacent vertex of their choice
+        
+        ### Available Game Modes
+        
+        #### 1. Demo from Paper
+        - Demonstrates the example from the original research paper
+        - Set lambda (λ) and initial budget values
+        - Run simulations to see the outcome
+        
+        #### 2. Interactive Play
+        - Play as Player 1 against an AI opponent
+        - Make bids and choose moves
+        - See the game unfold step by step
+        
+        #### 3. Theoretical Analysis
+        - Explore the mathematical properties behind the game
+        - View the threshold function showing how game outcomes change with λ
+        
+        #### 4. Custom Graph Creation
+        - Build your own game graph
+        - Add/remove vertices and edges
+        - Set target nodes and run simulations
+        
+        ### Key Concepts
+        - **Threshold**: For each vertex, there exists a threshold budget value such that:
+          - Player 1 wins if their budget is above the threshold
+          - Player 2 wins if their budget is below the threshold
+          - At exactly the threshold, the game may be undetermined
+        - **Lambda (λ)**: Controls how much wealth redistribution occurs (0 = no redistribution, 0.5 = maximum)
+        """)
+    
+    # Quick start guide for new users
+    with st.expander("🚀 Quick Start", expanded=False):
+        st.markdown("""
+        ### For First-Time Users
+        1. Select a game mode from the sidebar on the left
+        2. **Demo from Paper**: Just click "Run Simulation" to see the game in action
+        3. **Interactive Play**: Make bids and select moves when prompted
+        4. **Custom Graph**: Create your own graph before running a simulation
+        
+        ### Tips for Optimal Play
+        - **For Player 1**: 
+          - If your budget is above the threshold, try to maintain it while moving toward target
+          - Bid conservatively when possible to preserve budget
+        - **For Player 2**:
+          - Try to move away from target vertices
+          - Force Player 1 to spend budget on crucial moves
+        """)
+    
     
     # Sidebar for configuration
     st.sidebar.header("Game Configuration")
@@ -465,7 +531,7 @@ def main():
                             st.error("Player 2 wins by preventing target!")
                     
                     # Force refresh
-                    st.experimental_rerun()
+                    st.rerun()
         
         # Display game history
         st.subheader("Game History")
@@ -475,7 +541,7 @@ def main():
         if st.button("Reset Game"):
             del st.session_state.game
             del st.session_state.game_config
-            st.experimental_rerun()
+            st.rerun()
     
     elif game_mode == "Theoretical Analysis":
         st.header("Theoretical Analysis")
@@ -529,7 +595,7 @@ def main():
             if st.button("Add Node") and new_node and new_node not in st.session_state.custom_nodes:
                 st.session_state.custom_graph.add_node(new_node)
                 st.session_state.custom_nodes.append(new_node)
-                st.experimental_rerun()
+                st.rerun()
         
         with col2:
             # Remove node
